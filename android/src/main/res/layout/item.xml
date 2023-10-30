@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="horizontal"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/custom_popup_item_height"
+    android:layout_marginHorizontal="20sp">
+
+    <TextView
+        android:text="TextView"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:id="@+id/customPopupItemTitle"
+        android:textColor="@color/popup_item_text_color"
+        android:gravity="center"
+        android:layout_gravity="left"
+        android:layout_marginLeft="12sp" />
+
+    <LinearLayout
+        android:id="@+id/customPopupItemContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:gravity="end">
+        <ImageView
+            android:id="@+id/customPopupItemIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="20sp"
+            android:maxWidth="32sp"
+            android:minHeight="20sp"
+            android:maxHeight="20sp"
+            android:layout_gravity="center"
+            android:layout_marginRight="12sp" />
+    </LinearLayout>
+
+</RelativeLayout>

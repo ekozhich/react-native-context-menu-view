@@ -1,72 +1,53 @@
 package com.mpiannucci.reactnativecontextmenu;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
-import android.content.res.Resources;
-import android.gesture.Gesture;
-import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
-import android.text.SpannableString;
-import android.text.Spanned;
-import android.text.style.ForegroundColorSpan;
-import android.util.Log;
 import android.view.GestureDetector;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.PopupMenu;
-
-import androidx.core.content.res.ResourcesCompat;
+import android.widget.ListView;
+import android.widget.PopupWindow;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactContext;
-import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
-import com.facebook.react.touch.OnInterceptTouchEventListener;
 import com.facebook.react.uimanager.events.RCTEventEmitter;
 import com.facebook.react.views.view.ReactViewGroup;
+import com.mpiannucci.reactnativecontextmenu.extensions.ColorExtension;
+import com.mpiannucci.reactnativecontextmenu.extensions.DrawableExtension;
+import com.mpiannucci.reactnativecontextmenu.popup.CustomPopupAdapter;
+import com.mpiannucci.reactnativecontextmenu.popup.CustomPopupItem;
+import com.mpiannucci.reactnativecontextmenu.popup.CustomPopupItemOnClickInterface;
+import com.mpiannucci.reactnativecontextmenu.popup.CustomPopupWindow;
 
-import java.util.List;
+import java.util.ArrayList;
 
 import javax.annotation.Nullable;
 
-public class ContextMenuView extends ReactViewGroup implements PopupMenu.OnMenuItemClickListener, PopupMenu.OnDismissListener {
-
-    public class Action {
-        String title;
-        boolean disabled;
-
-        public Action(String title, boolean disabled) {
-            this.title = title;
-            this.disabled = disabled;
-        }
-    }
-
-    PopupMenu contextMenu;
+public class ContextMenuView extends ReactViewGroup {
+    CustomPopupWindow popupWindow;
 
     GestureDetector gestureDetector;
 
-    boolean cancelled = true;
-
     protected boolean dropdownMenuMode = false;
+
+    private ArrayList<CustomPopupItem> items = new ArrayList();
 
     public ContextMenuView(final Context context) {
         super(context);
 
-        contextMenu = new PopupMenu(getContext(), this);
-        contextMenu.setOnMenuItemClickListener(this);
-        contextMenu.setOnDismissListener(this);
+        popupWindow = new CustomPopupWindow(getContext());
+
+        popupWindow.setOnDismissListener(onDismissListener);
 
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onSingleTapConfirmed(MotionEvent e) {
                 if (dropdownMenuMode) {
-                    contextMenu.show();
+                    show();
                 }
                 return super.onSingleTapConfirmed(e);
             }
@@ -74,10 +55,35 @@ public class ContextMenuView extends ReactViewGroup implements PopupMenu.OnMenuI
             @Override
             public void onLongPress(MotionEvent e) {
                 if (!dropdownMenuMode) {
-                    contextMenu.show();
+                    show();
                 }
             }
         });
+    }
+
+    public PopupWindow.OnDismissListener onDismissListener = () -> {
+        ReactContext reactContext = (ReactContext) getContext();
+        reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(getId(), "onCancel", null);
+    };
+
+    private void show() {
+        CustomPopupAdapter adapter = new CustomPopupAdapter(getContext(), items);
+        adapter.setOnClickListener(new CustomPopupItemOnClickInterface() {
+            @Override
+            public void onClickItem(CustomPopupItem customPopupItem) {
+                onMenuItemClick(customPopupItem);
+            }
+        });
+
+        ListView listView = new ListView(getContext());
+
+        listView.setDivider(new ColorDrawable(ColorExtension.getColor(getContext(), R.color.popup_item_text_color)));
+        listView.setDividerHeight(1);
+        listView.setAdapter(adapter);
+        listView.setElevation(10);
+
+        popupWindow.setContentView(listView);
+        popupWindow.showAsPointer(this);
     }
 
     @Override
@@ -98,67 +104,36 @@ public class ContextMenuView extends ReactViewGroup implements PopupMenu.OnMenuI
         return true;
     }
 
+    public void onMenuItemClick(CustomPopupItem popupItem) {
+        ReactContext reactContext = (ReactContext) getContext();
+        WritableMap event = Arguments.createMap();
+        event.putInt("index", popupItem.getOrder());
+        event.putString("name", popupItem.getTitle());
+        reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(getId(), "onPress", event);
+        popupWindow.dismiss();
+    }
+
     public void setActions(@Nullable ReadableArray actions) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contextMenu.setForceShowIcon(true);
-        }
-        Menu menu = contextMenu.getMenu();
-        menu.clear();
+        items.clear();
 
         for (int i = 0; i < actions.size(); i++) {
             ReadableMap action = actions.getMap(i);
-            @Nullable Drawable systemIcon = getResourceWithName(getContext(), action.getString("systemIcon"));
+
+            boolean isSelected = action.hasKey("selected") && action.getBoolean("selected");
+            @Nullable Drawable systemIcon = DrawableExtension.getResourceWithName(getContext(), action.getString("systemIcon"));
             String title = action.getString("title");
-            int order = i;
-            menu.add(Menu.NONE, Menu.NONE, order, title);
-            menu.getItem(i).setEnabled(!action.hasKey("disabled") || !action.getBoolean("disabled"));
-            menu.getItem(i).setIcon(systemIcon);
-            if (action.hasKey("destructive") && action.getBoolean("destructive")) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    menu.getItem(i).setIconTintList(ColorStateList.valueOf(Color.RED));
-                }
-                SpannableString redTitle = new SpannableString(title);
-                redTitle.setSpan(new ForegroundColorSpan(Color.RED), 0, title.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                menu.getItem(i).setTitle(redTitle);
-            }
+
+            CustomPopupItem customPopupItem = new CustomPopupItem();
+            customPopupItem.setTitle(title);
+            customPopupItem.setOrder(i);
+            customPopupItem.setIsSelected(isSelected);
+            customPopupItem.setSystemIcon(systemIcon);
+
+            items.add(customPopupItem);
         }
     }
 
     public void setDropdownMenuMode(@Nullable boolean enabled) {
         this.dropdownMenuMode = enabled;
-    }
-
-    @Override
-    public boolean onMenuItemClick(MenuItem menuItem) {
-        cancelled = false;
-        ReactContext reactContext = (ReactContext) getContext();
-        WritableMap event = Arguments.createMap();
-        event.putInt("index", menuItem.getOrder());
-        event.putString("name", menuItem.getTitle().toString());
-        reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(getId(), "onPress", event);
-        return false;
-    }
-
-    @Override
-    public void onDismiss(PopupMenu popupMenu) {
-        if (cancelled) {
-            ReactContext reactContext = (ReactContext) getContext();
-            reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(getId(), "onCancel", null);
-        }
-
-        cancelled = true;
-    }
-
-    private Drawable getResourceWithName(Context context, @Nullable String systemIcon) {
-        if (systemIcon == null)
-            return null;
-
-        Resources resources = context.getResources();
-        int resourceId = resources.getIdentifier(systemIcon, "drawable", context.getPackageName());
-        try {
-            return resourceId != 0 ? ResourcesCompat.getDrawable(resources, resourceId, null) : null;
-        } catch (Exception e) {
-            return null;
-        }
     }
 }
